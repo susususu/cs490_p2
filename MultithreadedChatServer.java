@@ -16,7 +16,7 @@ public class MultithreadedChatServer implements Runnable {
 	
 	//main server attributes
 	ServerSocket serverSocket;
-	static ArrayList<String> group;
+	static ArrayList<Process> group;
 	static ConcurrentHashMap<String, Long> heart_beat;
 	ThreadPoolExecutor executor;
 	int port;
@@ -37,7 +37,7 @@ public class MultithreadedChatServer implements Runnable {
 		} catch ( Exception e ) {
 		}
 		
-		group = new ArrayList<String>();
+		group = new ArrayList<Process>();
 		heart_beat = new ConcurrentHashMap<String, Long>();
 	}
 
@@ -51,28 +51,33 @@ public class MultithreadedChatServer implements Runnable {
 		}
 	}
 	
-	private synchronized static boolean removeFromGroup(String s) {
+	private synchronized static boolean removeFromGroup(Process s) {
 		return MultithreadedChatServer.group.remove(s);
 	}
 
-	public synchronized boolean modifyGroup(String s, char flag) throws IOException {
-		if(flag == 'r') {
-			return MultithreadedChatServer.group.remove(s);
-		} else {
+	public synchronized boolean modifyGroup(String s) throws IOException {
 			String[] tok = s.split(",");
-			for(String m : MultithreadedChatServer.group) {
-				if(m.contains(tok[0])) {
+			System.out.println(s);
+			for(Process m : MultithreadedChatServer.group) {
+				if(m.ID.equals(tok[0])) {
 					String str = "Failed";
+				        this.oos.reset();
 					this.oos.writeObject(new Message(0, str, 'm', ""));
 					this.oos.flush();
 					return false;
 				}
 			}
-			MultithreadedChatServer.group.add(s);
+			
+			Process p = new Process();
+			p.ID = tok[0];
+			p.port = Integer.parseInt(tok[1]);
+			p.IP = tok[2];
+			
+			MultithreadedChatServer.group.add(p);
+		        this.oos.reset();
 			this.oos.writeObject(new Message(0, "Success", 'm', ""));
 			this.oos.flush();
 			return true;
-		}
 	}
 	
 	public void checkingHeartbeat() {
@@ -88,18 +93,17 @@ public class MultithreadedChatServer implements Runnable {
 					}
 					System.out.println("Checking Heartbeat");
 					
-					ArrayList<String> g = new ArrayList<String>();
+					ArrayList<Process> g = new ArrayList<Process>();
 					
 					Long time = System.currentTimeMillis();
-					for(String s : MultithreadedChatServer.group) {
-						Long t = MultithreadedChatServer.heart_beat.get(s);
+					for(Process s : MultithreadedChatServer.group) {
+						Long t = MultithreadedChatServer.heart_beat.get(s.ID);
 						if(time - t > 10000) {
 							g.add(s);
 						}
 					}
-					for(String s : g) {
-						System.out.println(s);
-						MultithreadedChatServer.heart_beat.remove(s);
+					for(Process s : g) {
+						MultithreadedChatServer.heart_beat.remove(s.ID);
 						if( !removeFromGroup(s)) {
 							System.out.println("removing failed");
 						}
@@ -118,15 +122,16 @@ public class MultithreadedChatServer implements Runnable {
 				Message m = (Message) this.ois.readObject();
 				System.out.println(m.flag + " " + m.contents);
 				if(m.flag == 'r') {
-					this.modifyGroup(m.contents, 'a');
+					this.modifyGroup(m.contents);
 					this.name = m.sender;
-					MultithreadedChatServer.heart_beat.put(m.contents, System.currentTimeMillis());
+					MultithreadedChatServer.heart_beat.put(m.sender, System.currentTimeMillis());
 				} else if(m.flag == 'g') {
 					System.out.println(MultithreadedChatServer.group.toString());
+				        this.oos.reset();
 					this.oos.writeObject(MultithreadedChatServer.group);
 					this.oos.flush();
 				} else if(m.flag == 'h') {
-					MultithreadedChatServer.heart_beat.put(m.contents, System.currentTimeMillis());
+					MultithreadedChatServer.heart_beat.put(m.sender, System.currentTimeMillis());
 				}
 			}
 		} catch (Exception e) {

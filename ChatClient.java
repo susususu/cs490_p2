@@ -1,4 +1,6 @@
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
@@ -12,7 +14,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 class ChatClient extends Process implements BroadcastReceiver, Runnable {
 
 	Broadcaster broadcaster;
-	ArrayList<String> group;
+	ArrayList<Process> group;
 	
 	//connection to the server
 	Socket s;
@@ -36,12 +38,18 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 	int portNumber;
 	
 	int HEARTBEAT_RATE = 5;
-	int THREAD_POOL_CAPACITY = 10;
+	int THREAD_POOL_CAPACITY = 50;
+	int messageNumber;
 	
 	public ChatClient( String serverAddress, int portNumber) throws UnknownHostException, IOException {
 		
+		this.messageNumber = 0;
+		
 		this.serverAddress = serverAddress;
 		this.portNumber = portNumber;
+		
+		this.broadcaster = new Broadcaster();
+		this.broadcaster.init(this, this);
 		
 		//connecting to server
 		this.s = new Socket(serverAddress, portNumber);
@@ -56,9 +64,14 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 		this.IP = s.getLocalAddress().toString().substring(1);
 		this.port = serverSocket.getLocalPort();
 		this.sc = new Scanner(System.in);
+		this.group = new ArrayList<Process>();
 		
 		//listening for incoming chat
 		this.listen();
+	}
+	
+	public ChatClient(Socket s) {
+		this._client = s;
 	}
 	
 	private void listen() {
@@ -73,6 +86,7 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 	        //send registering message
 	        String str = this.ID + "," + this.port + "," + this.IP;
 	        Message m = new Message(0, str, 'r', this.ID);
+	        this.oos.reset();
 	        this.oos.writeObject(m);
 	        this.oos.flush();
 	       
@@ -89,7 +103,36 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 
 	@Override
 	public void run() {
-		
+		while(true) {
+			try {
+				Socket client = this.serverSocket.accept();
+				ChatClient cc = new ChatClient(client);
+				this.executor.execute(new Runnable() {
+					
+					ChatClient cc;
+					
+					@Override
+					public void run() {
+						try {
+							ObjectInputStream ois = new ObjectInputStream(cc._client.getInputStream());
+							Message m = (Message) ois.readObject();
+							cc.recieve(m);
+						} catch (Exception e) {
+							Thread.yield();
+						}
+						
+					}
+					
+					public Runnable init(ChatClient s) {
+						this.cc = s;
+						return this;
+					}
+					
+				}.init(cc));
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 	}
 	
 	public void sendHeartbeat() {
@@ -103,6 +146,7 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 					while(true) {
 						String str = cc.ID + ',' + cc.port + ',' + cc.IP;
 						Message m = new Message(0, str, 'h', cc.ID);
+					        cc.oos.reset();
 						cc.oos.writeObject(m);
 						cc.oos.flush();
 						
@@ -136,19 +180,41 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 			} else if(s.equals("get")) {
 				try {
 					//try to get the list
+				        this.oos.reset();
 					this.oos.writeObject(new Message(0, "", 'g', ""));
 					this.oos.flush();
 					
 					//print out the list
-					this.group  = (ArrayList<String>) this.ois.readObject();
-					System.out.println(this.group.toString());
+					this.group  = (ArrayList<Process>) this.ois.readObject();
+					System.out.printf("%d People Online Now\n", this.group.size());
+					for(Process p: this.group) {
+						System.out.printf("%s ", p.ID);
+					}
+					System.out.println();
+					this.broadcaster.members = this.group;
 				} catch (IOException e) {
 					e.printStackTrace();
 				} catch (ClassNotFoundException e) {
 					e.printStackTrace();
 				}
+			} else if(s.startsWith("bc ")) {
+				try {
+					//get the newest version of user
+					 this.oos.reset();
+					this.oos.writeObject(new Message(0, "", 'g', ""));
+					this.oos.flush();
+					this.group  = (ArrayList<Process>) this.ois.readObject();
+					this.broadcaster.members = this.group;
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+				
+				//broadcast message
+				String str = s.substring(3);
+				Message m = new Message(this.messageNumber, str, 'b', this.ID);
+				this.messageNumber++;
+				this.broadcaster.bebBroadcast(m);
 			}
-		                
 		}
 	}
 	
