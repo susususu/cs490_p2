@@ -5,4 +5,4 @@ compile:
 	javac ChatClient.java
 
 clean:
-	rm *.class
+	rm -f *.class

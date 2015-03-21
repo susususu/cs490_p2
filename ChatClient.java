@@ -1,12 +1,12 @@
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Scanner;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -37,9 +37,13 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 	String serverAddress;
 	int portNumber;
 	
+	//message set
+	HashMap<String, LinkedList<Integer>> messageSet;
+	
 	int HEARTBEAT_RATE = 5;
 	int THREAD_POOL_CAPACITY = 50;
 	int messageNumber;
+	
 	
 	public ChatClient( String serverAddress, int portNumber) throws UnknownHostException, IOException {
 		
@@ -50,6 +54,8 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 		
 		this.broadcaster = new Broadcaster();
 		this.broadcaster.init(this, this);
+		
+		this.messageSet = new HashMap<String, LinkedList<Integer>>();
 		
 		//connecting to server
 		this.s = new Socket(serverAddress, portNumber);
@@ -98,7 +104,21 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 
 	@Override
 	public void recieve(Message m) {
+		LinkedList<Integer> n = null;
+		if(this.messageSet.containsKey(m.sender)) {
+			n = this.messageSet.get(m.sender);
+			for(int i : n) {
+				if(i == m.getMessageNumber()) {
+					return;
+				}
+			}
+		} else {
+			n = new LinkedList<Integer>();
+		}
 		System.out.printf("%s : %s\n", m.sender, m.contents);
+		n.add(m.getMessageNumber());
+		this.messageSet.put(m.sender, n);
+		this.broadcaster.bebBroadcast(m);
 	}
 
 	@Override
@@ -106,29 +126,31 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 		while(true) {
 			try {
 				Socket client = this.serverSocket.accept();
-				ChatClient cc = new ChatClient(client);
 				this.executor.execute(new Runnable() {
 					
 					ChatClient cc;
+					Socket s;
 					
 					@Override
 					public void run() {
 						try {
-							ObjectInputStream ois = new ObjectInputStream(cc._client.getInputStream());
+							ObjectInputStream ois = new ObjectInputStream(s.getInputStream());
 							Message m = (Message) ois.readObject();
 							cc.recieve(m);
 						} catch (Exception e) {
+							e.printStackTrace();
 							Thread.yield();
 						}
 						
 					}
 					
-					public Runnable init(ChatClient s) {
-						this.cc = s;
+					public Runnable init(ChatClient cc, Socket s) {
+						this.cc = cc;
+						this.s = s;
 						return this;
 					}
 					
-				}.init(cc));
+				}.init(this, client));
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
