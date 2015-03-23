@@ -4,7 +4,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 
 
-public class Broadcaster implements ReliableBroadcast {
+public class Broadcaster implements Broadcast {
 	
 	ArrayList < Process > members;
 	Process currentProcess;
@@ -27,17 +27,11 @@ public class Broadcaster implements ReliableBroadcast {
 	public void removeMember(Process member) {
 		this.members.remove(member);
 	}
-
-	@Override
-	public void rbBroadcast(Message m) {
-		
-	}
 	
+	@Override
 	public void bebBroadcast(Message m) {
 		for(Process p : members) {
-			Socket s;
-			try {
-				s = new Socket(p.IP, p.port);
+			try (Socket s = new Socket(p.IP, p.port)) {
 				ObjectOutputStream oos = new ObjectOutputStream(s.getOutputStream());
 				oos.writeObject(m);
 				oos.flush();
@@ -46,6 +40,18 @@ public class Broadcaster implements ReliableBroadcast {
 				System.out.printf("%s is not online\n", p.ID);
 			}
 		}
+	}
+
+	@Override
+	public void broadcast(Message m) {
+		//no matter what the message is create with the count sequence number
+		//so just bebBroadcast
+		this.bebBroadcast(m);
+	}
+
+	@Override
+	public void deliver(Message m) {
+		//dummy method
 	}
 	
 }

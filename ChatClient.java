@@ -5,8 +5,6 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Scanner;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -37,25 +35,20 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 	String serverAddress;
 	int portNumber;
 	
-	//message set
-	HashMap<String, LinkedList<Integer>> messageSet;
+	long messageCount;
 	
 	int HEARTBEAT_RATE = 5;
-	int THREAD_POOL_CAPACITY = 50;
+	int THREAD_POOL_CAPACITY = 100;
 	int messageNumber;
 	
 	
 	public ChatClient( String serverAddress, int portNumber) throws UnknownHostException, IOException {
 		
 		this.messageNumber = 0;
+		this.messageCount = 0;
 		
 		this.serverAddress = serverAddress;
 		this.portNumber = portNumber;
-		
-		this.broadcaster = new Broadcaster();
-		this.broadcaster.init(this, this);
-		
-		this.messageSet = new HashMap<String, LinkedList<Integer>>();
 		
 		//connecting to server
 		this.s = new Socket(serverAddress, portNumber);
@@ -72,12 +65,19 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 		this.sc = new Scanner(System.in);
 		this.group = new ArrayList<Process>();
 		
+		System.out.print("Do yo want FIFO order? [yn] ");
+		String str = sc.nextLine();
+		if(str.equals("y")) {
+			this.broadcaster = new fifoBroadcaster();
+		} else if(str.equals("n")){
+			this.broadcaster = new rbBroadcaster();
+		} else {
+			System.exit(0);
+		}
+		this.broadcaster.init(this, this);
+		
 		//listening for incoming chat
 		this.listen();
-	}
-	
-	public ChatClient(Socket s) {
-		this._client = s;
 	}
 	
 	private void listen() {
@@ -103,22 +103,9 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 	}
 
 	@Override
-	public void recieve(Message m) {
-		LinkedList<Integer> n = null;
-		if(this.messageSet.containsKey(m.sender)) {
-			n = this.messageSet.get(m.sender);
-			for(int i : n) {
-				if(i == m.getMessageNumber()) {
-					return;
-				}
-			}
-		} else {
-			n = new LinkedList<Integer>();
-		}
-		System.out.printf("%s : %s\n", m.sender, m.contents);
-		n.add(m.getMessageNumber());
-		this.messageSet.put(m.sender, n);
-		this.broadcaster.bebBroadcast(m);
+	public synchronized void recieve(Message m) {
+		this.messageCount++;
+		this.broadcaster.deliver(m);
 	}
 
 	@Override
@@ -127,26 +114,26 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 			try {
 				Socket client = this.serverSocket.accept();
 				this.executor.execute(new Runnable() {
-					
-					ChatClient cc;
-					Socket s;
+
+					BroadcastReceiver br;
+					Socket client;
 					
 					@Override
 					public void run() {
 						try {
-							ObjectInputStream ois = new ObjectInputStream(s.getInputStream());
+							ObjectInputStream ois = new ObjectInputStream(client.getInputStream());
 							Message m = (Message) ois.readObject();
-							cc.recieve(m);
-						} catch (Exception e) {
-							e.printStackTrace();
+							this.br.recieve(m);
+							this.client.close();
 							Thread.yield();
+						} catch (IOException | ClassNotFoundException e) {
+							e.printStackTrace();
 						}
-						
 					}
 					
-					public Runnable init(ChatClient cc, Socket s) {
-						this.cc = cc;
-						this.s = s;
+					public Runnable init(BroadcastReceiver br, Socket client) {
+						this.br = br;
+						this.client = client;
 						return this;
 					}
 					
@@ -168,7 +155,7 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 					while(true) {
 						String str = cc.ID + ',' + cc.port + ',' + cc.IP;
 						Message m = new Message(0, str, 'h', cc.ID);
-					        cc.oos.reset();
+					    cc.oos.reset();
 						cc.oos.writeObject(m);
 						cc.oos.flush();
 						
@@ -192,7 +179,7 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 		while(true) {
 			System.out.print("> ");
 			String s = this.sc.nextLine();
-			if(s.equals("exit")) {
+			if(s.equals("exit") || s.equals("q")) {
 				try {
 					this.s.close();
 				} catch (IOException e) {
@@ -235,7 +222,27 @@ class ChatClient extends Process implements BroadcastReceiver, Runnable {
 				String str = s.substring(3);
 				Message m = new Message(this.messageNumber, str, 'b', this.ID);
 				this.messageNumber++;
-				this.broadcaster.bebBroadcast(m);
+				this.broadcaster.broadcast(m);
+			} else if (s.equals("test")) {
+				for(int i = 0; i < 10000; i++) {
+					try {
+						Thread.sleep(1);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+					Message m = new Message(this.messageNumber, Integer.toString(i), 'b', this.ID);
+					this.messageNumber++;
+					this.broadcaster.broadcast(m);
+				}
+				System.out.printf("In total %d message recieved", this.messageCount);
+			} else if (s.equals("count")) {
+				System.out.println(this.messageCount);
+			} else if (s.equals("test2")) {
+				for(int i = 0; i < 3000; i++) {
+					Message m = new Message(this.messageNumber, Integer.toString(i), 'b', this.ID);
+					this.messageNumber++;
+					this.broadcaster.broadcast(m);
+				}
 			}
 		}
 	}

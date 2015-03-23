@@ -1,0 +1,22 @@
+README
+
+Zifan Su
+
+To build just type make.
+
+To run the server : java MultithreadedChatServer [portnumber]
+
+To run the client : java ChatClient [serveraddress] [portnumber]
+				or  java ChatClient [portnumber] which the server address will be set to localhost
+				
+In the client, the first server prompt is pretty obvious.
+You have to do get at each client before doing any testing. Make sure all the client that is online is in the list or it will not recieve any message.
+
+type exit or q to exit.
+type get to get the current user list.
+type bc [text] to broadcast message.
+type test to broadcast 10000 messages with the rate of one message per millisecond.
+type test2 to broadcast 3000 messages with no sleep time.
+type count to get how many times the recieve method of the client is called.
+
+For better observing the difference between two kinds broadcast, I suggest using test2 to test.
